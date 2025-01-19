@@ -54,3 +54,8 @@ dkms.conf
 # Application files
 generate
 lcs
+
+# Data files
+*.in
+input.dat
+output.txt

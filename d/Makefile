@@ -12,5 +12,17 @@ lcs: main.cpp lcs.cpp
 generate: generate.cpp
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
+data: generate
+	./scripts/data.sh
+
+bless: lcs
+	./scripts/bless.sh
+
+check: lcs
+	./scripts/check.sh
+
+benchmark: lcs
+	./scripts/benchmark.sh
+
 clean:
 	rm -f lcs generate
