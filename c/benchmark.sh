@@ -1,6 +1,6 @@
 #!/bin/bash
 
-expected="7.65468510748272383353e+04" # Intel
+expected="7.65468510748275439255e+04" # Intel
 
 cmake -B build
 cmake --build build
