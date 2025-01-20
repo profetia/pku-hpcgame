@@ -35,6 +35,7 @@ size_t lcs(element_t* arr_1, element_t* arr_2, size_t len_1, size_t len_2) {
     }
   }
 
+  mm_index = (mm_index + 2) % 3;
   size_t result = mm[mm_index][len_1];
 
   free(mm_);
