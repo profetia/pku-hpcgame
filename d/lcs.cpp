@@ -43,6 +43,7 @@ size_t lcs(element_t* arr_1, element_t* arr_2, size_t len_1, size_t len_2) {
       i_simd_start = i_block_start;
       i_simd_end = i_block_start + n_simd * 4 - 1;
 
+#pragma omp unroll
       for (i = i_simd_start; i <= i_simd_end; i += 4) {
         j = diag - i;
 
