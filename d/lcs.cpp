@@ -6,9 +6,10 @@
 
 typedef int element_t;
 
-typedef uint32_t length_t;
+typedef uint16_t length_t;
 
-constexpr size_t BLOCK_SIZE = 16;
+constexpr size_t BLOCK_SIZE = 32;
+constexpr size_t SIMD_SIZE = 16 / sizeof(length_t);
 
 __always_inline int32x4_t vrev128q_s32(int32x4_t v) {
   int32x4_t v_rev = vrev64q_s32(v);
@@ -39,31 +40,39 @@ size_t lcs(element_t* arr_1, element_t* arr_2, size_t len_1, size_t len_2) {
          i_block_start += BLOCK_SIZE) {
       i_block_end = std::min(i_block_start + BLOCK_SIZE - 1, i_end);
 
-      n_simd = (i_block_end - i_block_start + 1) / 4;
+      n_simd = (i_block_end - i_block_start + 1) / SIMD_SIZE;
       i_simd_start = i_block_start;
-      i_simd_end = i_block_start + n_simd * 4 - 1;
+      i_simd_end = i_block_start + n_simd * SIMD_SIZE - 1;
 
 #pragma omp unroll
-      for (i = i_simd_start; i <= i_simd_end; i += 4) {
+      for (i = i_simd_start; i <= i_simd_end; i += SIMD_SIZE) {
         j = diag - i;
 
-        int32x4_t v_arr_1 = vld1q_s32(arr_1 + i - 1);
-        int32x4_t v_arr_2 = vld1q_s32(arr_2 + j - 4);
-        v_arr_2 = vrev128q_s32(v_arr_2);
+        int32x4_t v_arr_1_low = vld1q_s32(arr_1 + i - 1);
+        int32x4_t v_arr_2_low = vld1q_s32(arr_2 + j - 4);
+        v_arr_2_low = vrev128q_s32(v_arr_2_low);
 
-        uint32x4_t v_mm_minus_2 = vld1q_u32(mm_minus_2 + i - 1);
-        uint32x4_t v_mm_true_branch = vaddq_u32(v_mm_minus_2, vdupq_n_u32(1));
+        int32x4_t v_arr_1_high = vld1q_s32(arr_1 + i + 3);
+        int32x4_t v_arr_2_high = vld1q_s32(arr_2 + j - 8);
+        v_arr_2_high = vrev128q_s32(v_arr_2_high);
 
-        uint32x4_t v_mm_minus_1 = vld1q_u32(mm_minus_1 + i - 1);
-        uint32x4_t v_mm_minus_1_shift_1 = vld1q_u32(mm_minus_1 + i);
-        uint32x4_t v_mm_false_branch =
-            vmaxq_u32(v_mm_minus_1, v_mm_minus_1_shift_1);
+        uint16x8_t v_mm_minus_2 = vld1q_u16(mm_minus_2 + i - 1);
+        uint16x8_t v_mm_true_branch = vaddq_u16(v_mm_minus_2, vdupq_n_u16(1));
 
-        uint32x4_t v_mm_if = vceqq_s32(v_arr_1, v_arr_2);
-        uint32x4_t v_mm_this =
-            vbslq_u32(v_mm_if, v_mm_true_branch, v_mm_false_branch);
+        uint16x8_t v_mm_minus_1 = vld1q_u16(mm_minus_1 + i - 1);
+        uint16x8_t v_mm_minus_1_shift_1 = vld1q_u16(mm_minus_1 + i);
+        uint16x8_t v_mm_false_branch =
+            vmaxq_u16(v_mm_minus_1, v_mm_minus_1_shift_1);
 
-        vst1q_u32(mm_this + i, v_mm_this);
+        uint32x4_t v_mm_if_low = vceqq_s32(v_arr_1_low, v_arr_2_low);
+        uint32x4_t v_mm_if_high = vceqq_s32(v_arr_1_high, v_arr_2_high);
+
+        uint16x8_t v_mm_if =
+            vcombine_u16(vmovn_u32(v_mm_if_low), vmovn_u32(v_mm_if_high));
+        uint16x8_t v_mm_this =
+            vbslq_u16(v_mm_if, v_mm_true_branch, v_mm_false_branch);
+
+        vst1q_u16(mm_this + i, v_mm_this);
       }
 
       for (i = i_simd_end + 1; i <= i_block_end; ++i) {
