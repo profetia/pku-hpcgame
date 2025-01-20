@@ -56,6 +56,6 @@ generate
 lcs
 
 # Data files
-*.in
+data/
 input.dat
 output.txt
