@@ -103,6 +103,7 @@ end
     return topk
 end
 
+# ref: https://github.com/pytorch/pytorch/blob/c6986ca2e125a0fc4decb9dd006cb31a8e8db19f/aten/src/ATen/native/cuda/SortingRadixSelect.cuh#L305
 @inbounds function radix_select(
     data::AbstractVector{T},
     k::Index,
