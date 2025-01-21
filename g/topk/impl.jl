@@ -12,11 +12,11 @@ const RADIX_BITS::Index = 2
 const RADIX_SIZE::Index = 1 << RADIX_BITS
 const RADIX_MASK::Bitwise = RADIX_SIZE - 1
 
-@inbounds function convert(value::Int64)
+@inbounds function convert(value::Int64)::Scalar
     return Scalar(9223372036854775808) + value
 end
 
-@inbounds function convert(value::Float64)
+@inbounds function convert(value::Float64)::Scalar
     x::Scalar = reinterpret(Scalar, value)
     mask::Scalar = -((x >> 63)) | Scalar(0x8000000000000000)
     return (value == value) ? xor(x, mask) : Scalar(0xffffffffffffffff)
@@ -26,7 +26,7 @@ end
     data::Bitwise,
     location::Index,
     bits::Index,
-)
+)::Bitwise
 
     mask::Bitwise = (1 << bits) - 1
     return (data >> location) & mask
@@ -37,7 +37,7 @@ end
     insert::Bitwise,
     location::Index,
     bits::Index,
-)
+)::Bitwise
 
     mask::Bitwise = (1 << bits) - 1
     insert <<= location
@@ -50,7 +50,8 @@ end
     desired::Bitwise,
     mask::Bitwise,
     location::Index,
-) where {T}
+)::Array{Count} where {T}
+
 
     counts::Array{Count} = zeros(Count, RADIX_SIZE)
     for value in data
@@ -72,7 +73,8 @@ end
     data::AbstractVector{T},
     k::Index,
     desired::Bitwise,
-) where {T}
+)::Array{Index} where {T}
+
     topk::Array{Index} = zeros(Index, k)
     topk_count::Index = 1
 
@@ -91,7 +93,7 @@ end
 @inbounds function radix_select(
     data::AbstractVector{T},
     k::Index,
-) where {T}
+)::Array{Index} where {T}
 
     desired::Bitwise = 0
     mask::Bitwise = 0
@@ -121,6 +123,8 @@ end
             k_remaining -= count
         end
     end
+
+    return Index[]
 end
 
 @inbounds function topk(data::AbstractVector{T}, k) where {T}
