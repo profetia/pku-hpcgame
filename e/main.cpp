@@ -280,30 +280,29 @@ int main(int argc, char **argv) {
 
   {
     int kLineSize = (kN * 2 + 1) * sizeof(char);
-    int offset = kRank * kChunkSize * kLineSize;
+    int kTextSize = kLineSize * kChunkSize;
+    int offset = kRank * kTextSize;
 
-    char *line;
-    MPI_Alloc_mem(kLineSize, MPI_INFO_NULL, &line);
+    char *text;
+    MPI_Alloc_mem(kTextSize, MPI_INFO_NULL, &text);
+
+    for (Index i = 1; i <= kChunkSize; ++i) {
+      for (Index j = 0; j < kN; ++j) {
+        text[(i - 1) * kLineSize + j * 2] = forest_local[i * kN + j];
+        text[(i - 1) * kLineSize + j * 2 + 1] = ' ';
+      }
+      text[(i - 1) * kLineSize + kN * 2] = '\n';
+    }
 
     MPI_File out;
     MPI_File_open(MPI_COMM_WORLD, kOutputFile,
                   MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &out);
 
-    for (Index i = 1; i <= kChunkSize; ++i) {
-      for (Index j = 0; j < kN; ++j) {
-        line[j * 2] = forest_local[i * kN + j];
-        line[j * 2 + 1] = ' ';
-      }
-      line[kN * 2] = '\n';
-
-      MPI_File_write_at_all(out, offset, line, kN * 2 + 1, MPI_CHAR,
-                            MPI_STATUS_IGNORE);
-
-      offset += kLineSize;
-    }
+    MPI_File_write_at_all(out, offset, text, kTextSize, MPI_CHAR,
+                          MPI_STATUS_IGNORE);
 
     MPI_File_close(&out);
-    MPI_Free_mem(line);
+    MPI_Free_mem(text);
   }
 
   MPI_Free_mem(new_forest_local);
