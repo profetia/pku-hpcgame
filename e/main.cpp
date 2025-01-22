@@ -10,15 +10,12 @@ constexpr Cell TREE = 1 + '0';
 constexpr Cell FIRE = 2 + '0';
 constexpr Cell ASH = 3 + '0';
 
-using Event = uint16_t;
+using Event = int;
 constexpr Event THUNDER = 1;
 constexpr Event REBIRTH = 2;
 
-using Time = uint16_t;
-using Index = uint16_t;
-
-using CommRank = int;
-using FileOffset = int32_t;
+using Time = int;
+using Index = int;
 
 struct Fight {
   Time ts;
@@ -151,14 +148,14 @@ int main(int argc, char **argv) {
 
   MPI_Init(&argc, &argv);
 
-  CommRank kRank, kSize;
+  int kRank, kSize;
   MPI_Comm_rank(MPI_COMM_WORLD, &kRank);
   MPI_Comm_size(MPI_COMM_WORLD, &kSize);
 
   Index kN, kM;
   Time kT;
 
-  FileOffset header_offset;
+  int header_offset;
   Fight *fights;
 
   {
@@ -167,14 +164,14 @@ int main(int argc, char **argv) {
       in.open(kInputFile);
 
       in >> kN >> kM >> kT;
-      header_offset = static_cast<FileOffset>(in.tellg()) + 1;
+      header_offset = static_cast<int>(in.tellg()) + 1;
     }
 
-    MPI_Bcast(&kN, 1, MPI_UINT16_T, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&kM, 1, MPI_UINT16_T, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&kT, 1, MPI_UINT16_T, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&kN, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&kM, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&kT, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    MPI_Bcast(&header_offset, 1, MPI_INT32_T, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&header_offset, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
     MPI_Alloc_mem(kM * sizeof(Fight), MPI_INFO_NULL, &fights);
     in.seekg(header_offset + kN * kN * sizeof(char) * 2);
@@ -201,8 +198,7 @@ int main(int argc, char **argv) {
                 &new_forest_local);
 
   {
-    FileOffset offset =
-        header_offset + kRank * kChunkSize * kN * sizeof(char) * 2;
+    int offset = header_offset + kRank * kChunkSize * kN * sizeof(char) * 2;
 
     MPI_Datatype cell_type, cell_space_type;
     MPI_Type_contiguous(sizeof(Cell), MPI_BYTE, &cell_type);
@@ -222,33 +218,69 @@ int main(int argc, char **argv) {
     MPI_File_close(&in);
   }
 
-  CommRank left = (kRank == 0) ? MPI_PROC_NULL : kRank - 1;
-  CommRank right = (kRank == kSize - 1) ? MPI_PROC_NULL : kRank + 1;
-
   Fight *next_fight = fights;
+  MPI_Request left_send, left_recv, right_send, right_recv;
+
+  if (kRank > 0) {
+    MPI_Irecv(forest_local, kN, MPI_UINT8_T, kRank - 1, 0, MPI_COMM_WORLD,
+              &left_recv);
+  }
+  if (kRank < kSize - 1) {
+    MPI_Irecv(forest_local + (kChunkSize + 1) * kN, kN, MPI_UINT8_T, kRank + 1,
+              0, MPI_COMM_WORLD, &right_recv);
+  }
+  if (kRank > 0) {
+    MPI_Isend(forest_local + kN, kN, MPI_UINT8_T, kRank - 1, 0, MPI_COMM_WORLD,
+              &left_send);
+  }
+  if (kRank < kSize - 1) {
+    MPI_Isend(forest_local + kChunkSize * kN, kN, MPI_UINT8_T, kRank + 1, 0,
+              MPI_COMM_WORLD, &right_send);
+  }
+
   for (Time step = 1; step <= kT; ++step) {
+    if (kRank > 0) {
+      MPI_Wait(&left_recv, MPI_STATUS_IGNORE);
+      MPI_Wait(&left_send, MPI_STATUS_IGNORE);
+
+      if (step < kT) {
+        MPI_Irecv(new_forest_local, kN, MPI_UINT8_T, kRank - 1, 0,
+                  MPI_COMM_WORLD, &left_recv);
+      }
+    }
+    if (kRank < kSize - 1) {
+      MPI_Wait(&right_recv, MPI_STATUS_IGNORE);
+      MPI_Wait(&right_send, MPI_STATUS_IGNORE);
+
+      if (step < kT) {
+        MPI_Irecv(new_forest_local + (kChunkSize + 1) * kN, kN, MPI_UINT8_T,
+                  kRank + 1, 0, MPI_COMM_WORLD, &right_recv);
+      }
+    }
+
     if (next_fight != fights + kM && next_fight->ts == step) {
       apply_fight(forest_local, next_fight, kN, kRank, kChunkSize,
                   kChunkOffset);
       ++next_fight;
     }
 
-    MPI_Sendrecv(forest_local + kN, kN, MPI_UINT8_T, left, 0,
-                 forest_local + (kChunkSize + 1) * kN, kN, MPI_UINT8_T, right,
-                 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    MPI_Sendrecv(forest_local + kChunkSize * kN, kN, MPI_UINT8_T, right, 0,
-                 forest_local, kN, MPI_UINT8_T, left, 0, MPI_COMM_WORLD,
-                 MPI_STATUS_IGNORE);
-
     update_forest(forest_local, kN, kRank, kSize, kChunkSize, new_forest_local);
+
+    if (step < kT && kRank > 0) {
+      MPI_Isend(new_forest_local + kN, kN, MPI_UINT8_T, kRank - 1, 0,
+                MPI_COMM_WORLD, &left_send);
+    }
+    if (step < kT && kRank < kSize - 1) {
+      MPI_Isend(new_forest_local + kChunkSize * kN, kN, MPI_UINT8_T, kRank + 1,
+                0, MPI_COMM_WORLD, &right_send);
+    }
 
     std::swap(forest_local, new_forest_local);
   }
 
   {
-    FileOffset kLineSize = (kN * 2 + 1) * sizeof(char);
-    FileOffset offset = kRank * kChunkSize * kLineSize;
+    int kLineSize = (kN * 2 + 1) * sizeof(char);
+    int offset = kRank * kChunkSize * kLineSize;
 
     char *line;
     MPI_Alloc_mem(kLineSize, MPI_INFO_NULL, &line);
@@ -264,7 +296,7 @@ int main(int argc, char **argv) {
       }
       line[kN * 2] = '\n';
 
-      MPI_File_write_at_all(out, offset, line, kN * 2 + 1, MPI_BYTE,
+      MPI_File_write_at_all(out, offset, line, kN * 2 + 1, MPI_CHAR,
                             MPI_STATUS_IGNORE);
 
       offset += kLineSize;
