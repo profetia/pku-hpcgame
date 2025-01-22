@@ -1,5 +1,5 @@
 CXX := mpiicpx
-CXXFLAGS := -O3 -xHost
+CXXFLAGS := -O3 -xHost -Wall -Wpedantic
 all: main baseline
 
 main: main.cpp

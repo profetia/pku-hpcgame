@@ -141,7 +141,7 @@ int main(int argc, char **argv) {
   std::unique_ptr<Cell[]> new_forest(new Cell[n * n]);
 
   for (Time step = 1; step <= t; ++step) {
-    if (step == next_fight->ts) {
+    if (next_fight != fights.get() + m && next_fight->ts == step) {
       apply_fight(forest.get(), next_fight, n);
       ++next_fight;
     }
