@@ -6,7 +6,7 @@ export LD_LIBRARY_PATH=$PWD/secp256k1-install/lib:$LD_LIBRARY_PATH
 
 make -j
 
-./vanity
+time ./vanity
 
 ./chk
 

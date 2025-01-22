@@ -39,3 +39,6 @@ secp256k1-install/
 chk
 vanity
 baseline
+
+# Auxiliaries
+result.txt
