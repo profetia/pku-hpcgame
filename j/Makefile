@@ -1,6 +1,6 @@
-CC = gcc
-CFLAGS = 
-LDFLAGS =
+CC = clang
+CFLAGS = -O3 -march=native -Wall -Wextra
+LDFLAGS = -fopenmp -lkblas
 
 .PHONY: all clean
 
@@ -13,6 +13,9 @@ hpl-ai: blas.o gmres.o sgetrf_nopiv.o
 # Pattern rule
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
+
+submit: 
+	./submit.sh
 
 clean:
 	rm -f hpl-ai blas.o gmres.o sgetrf_nopiv.o
