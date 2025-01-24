@@ -3,9 +3,7 @@
 
 #define CEIL(a, b) (((a) + (b) - 1) / (b))
 
-struct Point {
-  double x, y, z;
-};
+using Point = double3;
 
 static __device__ __forceinline__ double distance(Point a, Point b) {
   double dx = a.x - b.x;
@@ -66,7 +64,6 @@ int main() {
   cudaMemcpy(d_mirs, mirs, kMirN * sizeof(Point), cudaMemcpyHostToDevice);
   cudaMemcpy(d_sens, sens, kSenN * sizeof(Point), cudaMemcpyHostToDevice);
 
-  // TODO
   {
     int kBlockSize = BLOCK_SIZE;
     int kGridSize = CEIL(kSenN, kBlockSize);
