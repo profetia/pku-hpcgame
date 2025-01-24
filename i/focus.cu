@@ -16,49 +16,57 @@ static __device__ __forceinline__ double distance(Point a, Point b) {
 }
 
 constexpr int BLOCK_SIZE = 1024;
+
 constexpr int MIR_WINDOW_SIZE = 512;
-constexpr int SEN_WINDOW_SIZE = 8;
+constexpr int MIR_TILE_SIZE = 16;
+
+constexpr int SEN_CHUNK_SIZE = 8;
 
 __global__ void focus_ab(const Point kSrc, const Point* mirs, const int kMirN,
                          const Point* sens, const int kSenN, float* a,
                          float* b) {
-  int kMirOffset = blockIdx.x * 1 * MIR_WINDOW_SIZE + 0 * MIR_WINDOW_SIZE;
+  int kMirOffset = blockIdx.x * MIR_WINDOW_SIZE * MIR_TILE_SIZE;
   int kSenOffset =
-      blockIdx.y * BLOCK_SIZE * SEN_WINDOW_SIZE + threadIdx.y * SEN_WINDOW_SIZE;
+      blockIdx.y * BLOCK_SIZE * SEN_CHUNK_SIZE + threadIdx.y * SEN_CHUNK_SIZE;
 
   __shared__ Point local_mirs[MIR_WINDOW_SIZE];
 
-  float local_a = 0;
-  float local_b = 0;
+  float local_a[SEN_CHUNK_SIZE] = {0};
+  float local_b[SEN_CHUNK_SIZE] = {0};
 
   mirs += kMirOffset;
   sens += kSenOffset;
   a += kSenOffset;
   b += kSenOffset;
 
-  if (threadIdx.y < MIR_WINDOW_SIZE) {
-    local_mirs[threadIdx.y] = mirs[threadIdx.y];
-  }
-
-  __syncthreads();
-
-  for (int i = 0; i < SEN_WINDOW_SIZE; ++i) {
-    local_a = 0;
-    local_b = 0;
-
-    Point sen = sens[i];
-    for (int j = 0; j < MIR_WINDOW_SIZE; ++j) {
-      Point mir = local_mirs[j];
-      double l = distance(mir, kSrc) + distance(mir, sen);
-      double a_, b_;
-      sincos(6.283185307179586 * 2000 * l, &b_, &a_);
-
-      local_a += static_cast<float>(a_);
-      local_b += static_cast<float>(b_);
+  for (int k = 0; k < MIR_TILE_SIZE; ++k) {
+    if (threadIdx.y < MIR_WINDOW_SIZE) {
+      local_mirs[threadIdx.y] = mirs[threadIdx.y];
     }
 
-    atomicAdd(&a[i], local_a);
-    atomicAdd(&b[i], local_b);
+    __syncthreads();
+
+    for (int i = 0; i < SEN_CHUNK_SIZE; ++i) {
+      Point sen = sens[i];
+
+      for (int j = 0; j < MIR_WINDOW_SIZE; ++j) {
+        Point mir = local_mirs[j];
+        double l = distance(mir, kSrc) + distance(mir, sen);
+        double a_, b_;
+        sincos(6.283185307179586 * 2000 * l, &b_, &a_);
+
+        local_a[i] += static_cast<float>(a_);
+        local_b[i] += static_cast<float>(b_);
+      }
+    }
+
+    mirs += MIR_WINDOW_SIZE;
+    __syncthreads();
+  }
+
+  for (int i = 0; i < SEN_CHUNK_SIZE; ++i) {
+    atomicAdd(&a[i], local_a[i]);
+    atomicAdd(&b[i], local_b[i]);
   }
 }
 
@@ -120,8 +128,8 @@ int main() {
 
   {
     dim3 block_dim(1, BLOCK_SIZE);
-    dim3 grid_dim(CEIL(kMirN, MIR_WINDOW_SIZE * 1),
-                  CEIL(kSenN, SEN_WINDOW_SIZE * BLOCK_SIZE));
+    dim3 grid_dim(CEIL(kMirN, MIR_WINDOW_SIZE * MIR_TILE_SIZE),
+                  CEIL(kSenN, SEN_CHUNK_SIZE * BLOCK_SIZE));
 
     focus_ab<<<grid_dim, block_dim>>>(kSrc, d_mirs, kMirN, d_sens, kSenN, d_a,
                                       d_b);
