@@ -39,6 +39,9 @@
 *.cubin
 *.fatbin
 
+# Profiles
+*.nsys-rep
+
 # User Specifics
 data/
 baseline
