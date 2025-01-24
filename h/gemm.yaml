@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hpcgame-test-gemm
+  labels:
+    name: hpcgame-test-gemm
+  annotations:
+    k8s.v1.cni.cncf.io/networks: default/wm2-roce
+spec:
+  nodeSelector:
+    nvidia.com/gpu.product: NVIDIA-L40-SHARED
+  containers:
+    - name: rdma
+      securityContext:
+        capabilities:
+          add: ["SYS_PTRACE", "IPC_LOCK"]
+      # gemm 这个题要求 cuda 这个镜像
+      image: crmirror.lcpu.dev/hpcgame/cuda:latest
+      resources:
+        limits:
+          memory: 32Gi
+          cpu: 8
+          nvidia.com/gpu: 1
+        requests:
+          memory: 32Gi
+          cpu: 8
+          nvidia.com/gpu: 1
+      command:
+        - sleep
+        - inf
