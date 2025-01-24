@@ -15,6 +15,19 @@ static __device__ __forceinline__ double distance(Point a, Point b) {
   return sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+using MriPoint = double4;
+
+__global__ void focus_mri_point(const Point kSrc, const Point* mirs,
+                                const int kMirN, MriPoint* mirs_extra) {
+  int kMirIdx = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (kMirIdx < kMirN) {
+    Point mir = mirs[kMirIdx];
+    double dist = distance(mir, kSrc);
+    mirs_extra[kMirIdx] = make_double4(mir.x, mir.y, mir.z, dist);
+  }
+}
+
 constexpr int BLOCK_SIZE = 1024;
 
 constexpr int MIR_WINDOW_SIZE = 512;
@@ -22,14 +35,14 @@ constexpr int MIR_TILE_SIZE = 16;
 
 constexpr int SEN_CHUNK_SIZE = 8;
 
-__global__ void focus_ab(const Point kSrc, const Point* mirs, const int kMirN,
-                         const Point* sens, const int kSenN, float* a,
-                         float* b) {
+__global__ void focus_ab(const Point kSrc, const MriPoint* mirs,
+                         const int kMirN, const Point* sens, const int kSenN,
+                         float* a, float* b) {
   int kMirOffset = blockIdx.x * MIR_WINDOW_SIZE * MIR_TILE_SIZE;
   int kSenOffset =
       blockIdx.y * BLOCK_SIZE * SEN_CHUNK_SIZE + threadIdx.y * SEN_CHUNK_SIZE;
 
-  __shared__ Point local_mirs[MIR_WINDOW_SIZE];
+  __shared__ MriPoint local_mirs[MIR_WINDOW_SIZE];
 
   float local_a[SEN_CHUNK_SIZE] = {0};
   float local_b[SEN_CHUNK_SIZE] = {0};
@@ -50,8 +63,8 @@ __global__ void focus_ab(const Point kSrc, const Point* mirs, const int kMirN,
       Point sen = sens[i];
 
       for (int j = 0; j < MIR_WINDOW_SIZE; ++j) {
-        Point mir = local_mirs[j];
-        double l = distance(mir, kSrc) + distance(mir, sen);
+        MriPoint mir = local_mirs[j];
+        double l = mir.w + distance(sen, make_double3(mir.x, mir.y, mir.z));
         double a_, b_;
         sincos(6.283185307179586 * 2000 * l, &b_, &a_);
 
@@ -114,6 +127,9 @@ int main() {
   cudaMalloc(&d_mirs, kMirN * sizeof(Point));
   cudaMalloc(&d_sens, kSenN * sizeof(Point));
 
+  MriPoint* d_mirs_extra;
+  cudaMalloc(&d_mirs_extra, kMirN * sizeof(MriPoint));
+
   float *d_a, *d_b;
   cudaMalloc(&d_a, kSenN * sizeof(float));
   cudaMalloc(&d_b, kSenN * sizeof(float));
@@ -127,12 +143,18 @@ int main() {
   cudaMemset(d_b, 0, kSenN * sizeof(float));
 
   {
+    int block_dim = BLOCK_SIZE;
+    int grid_dim = CEIL(kMirN, block_dim);
+    focus_mri_point<<<grid_dim, block_dim>>>(kSrc, d_mirs, kMirN, d_mirs_extra);
+  }
+
+  {
     dim3 block_dim(1, BLOCK_SIZE);
     dim3 grid_dim(CEIL(kMirN, MIR_WINDOW_SIZE * MIR_TILE_SIZE),
                   CEIL(kSenN, SEN_CHUNK_SIZE * BLOCK_SIZE));
 
-    focus_ab<<<grid_dim, block_dim>>>(kSrc, d_mirs, kMirN, d_sens, kSenN, d_a,
-                                      d_b);
+    focus_ab<<<grid_dim, block_dim>>>(kSrc, d_mirs_extra, kMirN, d_sens, kSenN,
+                                      d_a, d_b);
   };
 
   {
@@ -152,6 +174,7 @@ int main() {
 
   cudaFree(d_mirs);
   cudaFree(d_sens);
+  cudaFree(d_mirs_extra);
   cudaFree(d_a);
   cudaFree(d_b);
   cudaFree(d_illums);
