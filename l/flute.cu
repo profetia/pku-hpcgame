@@ -24,7 +24,7 @@ typedef struct {
 void readLUT();
 DTYPE flute_wl(int d, DTYPE x[], DTYPE y[], int acc);
 // Macro: DTYPE flutes_wl(int d, DTYPE xs[], DTYPE ys[], int s[], int acc);
-Tree flute(int d, DTYPE x[], DTYPE y[], int acc);
+void flute(int d, DTYPE x[], DTYPE y[], int acc);
 // Macro: Tree flutes(int d, DTYPE xs[], DTYPE ys[], int s[], int acc);
 DTYPE wirelength(Tree t);
 void printtree(Tree t);
@@ -51,16 +51,19 @@ Tree flutes_RDP(int d, DTYPE xs[], DTYPE ys[], int s[], int acc);
 #define flutes(d, xs, ys, s, acc) flutes_RDP(d, xs, ys, s, acc)
 #else
 #define flutes_wl(d, xs, ys, s, acc) flutes_wl_ALLD(d, xs, ys, s, acc)
-#define flutes(d, xs, ys, s, acc) flutes_ALLD(d, xs, ys, s, acc)
+#define flutes(d, xs, ys, s, acc, d_LUT, d_numsoln) \
+  flutes_ALLD(d, xs, ys, s, acc, d_LUT, d_numsoln)
 #endif
 
 #define flutes_wl_ALLD(d, xs, ys, s, acc) flutes_wl_LMD(d, xs, ys, s, acc)
-#define flutes_ALLD(d, xs, ys, s, acc) flutes_LMD(d, xs, ys, s, acc)
+#define flutes_ALLD(d, xs, ys, s, acc, d_LUT, d_numsoln) \
+  flutes_LMD(d, xs, ys, s, acc, d_LUT, d_numsoln)
 
 #define flutes_wl_LMD(d, xs, ys, s, acc) \
   (d <= D ? flutes_wl_LD(d, xs, ys, s) : flutes_wl_MD(d, xs, ys, s, acc))
-#define flutes_LMD(d, xs, ys, s, acc) \
-  (d <= D ? flutes_LD(d, xs, ys, s) : flutes_MD(d, xs, ys, s, acc))
+#define flutes_LMD(d, xs, ys, s, acc, d_LUT, d_numsoln) \
+  (d <= D ? flutes_LD(d, xs, ys, s, d_LUT, d_numsoln)   \
+          : flutes_MD(d, xs, ys, s, acc, d_LUT, d_numsoln))
 
 #define ADIFF(x, y) ((x) > (y) ? (x - y) : (y - x))  // Absolute difference
 
@@ -94,9 +97,13 @@ struct csoln *LUT[D + 1][MGROUP];  // storing 4 .. D
 int numsoln[D + 1][MGROUP];
 
 void readLUT();
-Tree flute(int d, DTYPE x[], DTYPE y[], int acc);
-Tree flutes_LD(int d, DTYPE xs[], DTYPE ys[], int s[]);
-Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc);
+void flute(int d, DTYPE x[], DTYPE y[], int acc);
+Tree flutes_LD(int d, DTYPE xs[], DTYPE ys[], int s[],
+               struct csoln *d_LUT[D + 1][MGROUP],
+               int d_numsoln[D + 1][MGROUP]);
+Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc,
+               struct csoln *d_LUT[D + 1][MGROUP],
+               int d_numsoln[D + 1][MGROUP]);
 Tree flutes_RDP(int d, DTYPE xs[], DTYPE ys[], int s[], int acc);
 Tree dmergetree(Tree t1, Tree t2);
 Tree hmergetree(Tree t1, Tree t2, int s[]);
@@ -170,8 +177,11 @@ void readLUT() {
       } else {
         fgetc(fpwv);  // '\n'
         numsoln[d][k] = ns;
+
         p = (struct csoln *)malloc(ns * sizeof(struct csoln));
-        LUT[d][k] = p;
+
+        struct csoln *p0 = p;
+
         for (i = 1; i <= ns; i++) {
           linep = (unsigned char *)fgets((char *)line, 99, fpwv);
           p->parent = charnum[*(linep++)];
@@ -204,12 +214,28 @@ void readLUT() {
 #endif
           p++;
         }
+
+        struct csoln *d_p;
+        cudaMalloc(&d_p, ns * sizeof(struct csoln));
+        cudaMemcpy(d_p, p0, ns * sizeof(struct csoln), cudaMemcpyHostToDevice);
+
+        LUT[d][k] = d_p;
       }
     }
   }
 }
 
-Tree flute(int d, DTYPE x[], DTYPE y[], int acc) {
+__global__ void flute(int num_nets, int *pin_st, DTYPE *data_x, DTYPE *data_y,
+                      int acc, DTYPE *result_x, DTYPE *result_y, int *result_n,
+                      struct csoln *d_LUT[D + 1][MGROUP],
+                      int d_numsoln[D + 1][MGROUP]) {
+  int net_i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (net_i >= num_nets) return;
+
+  int d = pin_st[net_i + 1] - pin_st[net_i];
+  DTYPE *x = data_x + pin_st[net_i];
+  DTYPE *y = data_y + pin_st[net_i];
+
   unsigned allocateSize = MAXD;
   if (d > MAXD) {
     allocateSize = d + 1;
@@ -238,10 +264,22 @@ Tree flute(int d, DTYPE x[], DTYPE y[], int acc) {
   }
 
   // sort x
-  std::sort(ptp, ptp + d, [](POINTptr a, POINTptr b) {
-    return !(a->x > b->x ||
-             (a->x == b->x && (a->y > b->y || (a->y == b->y && a > b))));
-  });
+  for (i = 0; i < d - 1; i++) {
+    minval = ptp[i]->x;
+    minidx = i;
+    for (j = i + 1; j < d; j++) {
+      if (minval > ptp[j]->x ||
+          (minval == ptp[j]->x &&
+           (ptp[minidx]->y > ptp[j]->y ||
+            (ptp[minidx]->y == ptp[j]->y && ptp[minidx] > ptp[j])))) {
+        minval = ptp[j]->x;
+        minidx = j;
+      }
+    }
+    tmpp = ptp[i];
+    ptp[i] = ptp[minidx];
+    ptp[minidx] = tmpp;
+  }
 
 #if REMOVE_DUPLICATE_PIN == 1
   ptp[d] = &pt[d];
@@ -262,16 +300,26 @@ Tree flute(int d, DTYPE x[], DTYPE y[], int acc) {
   }
 
   // sort y to find s[]
-  std::sort(ptp, ptp + d, [](POINTptr a, POINTptr b) {
-    return !(a->y > b->y ||
-             (a->y == b->y && (a->x > b->x || (a->x == b->x && a > b))));
-  });
-  for (int i = 0; i < d; i++) {
-    ys[i] = ptp[i]->y;
-    s[i] = ptp[i]->o;
+  for (i = 0; i < d - 1; i++) {
+    minval = ptp[i]->y;
+    minidx = i;
+    for (j = i + 1; j < d; j++) {
+      if (minval > ptp[j]->y ||
+          (minval == ptp[j]->y &&
+           (ptp[minidx]->x > ptp[j]->x ||
+            (ptp[minidx]->x == ptp[j]->x && ptp[minidx] > ptp[j])))) {
+        minval = ptp[j]->y;
+        minidx = j;
+      }
+    }
+    ys[i] = ptp[minidx]->y;
+    s[i] = ptp[minidx]->o;
+    ptp[minidx] = ptp[i];
   }
+  ys[d - 1] = ptp[d - 1]->y;
+  s[d - 1] = ptp[d - 1]->o;
 
-  t = flutes(d, xs, ys, s, acc);
+  t = flutes(d, xs, ys, s, acc, d_LUT, d_numsoln);
 
   // free(xs);
   // free(ys);
@@ -279,43 +327,19 @@ Tree flute(int d, DTYPE x[], DTYPE y[], int acc) {
   // free(pt);
   // free(ptp);
 
-  return t;
-}
-
-// xs[] and ys[] are coords in x and y in sorted order
-// s[] is a list of nodes in increasing y direction
-//   if nodes are indexed in the order of increasing x coord
-//   i.e., s[i] = s_i in defined in paper
-// The points are (xs[s[i]], ys[i]) for i=0..d-1
-//             or (xs[i], ys[si[i]]) for i=0..d-1
-// ZZ: RDP denotes Remove Duplicate Pin, simple, like std::unique
-Tree flutes_RDP(int d, DTYPE xs[], DTYPE ys[], int s[], int acc) {
-  int i, j, ss;
-
-  for (i = 0; i < d - 1; i++) {
-    if (xs[s[i]] == xs[s[i + 1]] && ys[i] == ys[i + 1]) {
-      if (s[i] < s[i + 1])
-        ss = s[i + 1];
-      else {
-        ss = s[i];
-        s[i] = s[i + 1];
-      }
-      for (j = i + 2; j < d; j++) {
-        ys[j - 1] = ys[j];
-        s[j - 1] = s[j];
-      }
-      for (j = ss + 1; j < d; j++) xs[j - 1] = xs[j];
-      for (j = 0; j <= d - 2; j++)
-        if (s[j] > ss) s[j]--;
-      i--;
-      d--;
-    }
+  int offset = pin_st[net_i] * 2;
+  for (int i = 0; i < 2 * t.deg - 2; ++i) {
+    result_x[offset + i] = t.branch[i].x;
+    result_y[offset + i] = t.branch[i].y;
+    result_n[offset + i] = t.branch[i].n;
   }
-  return flutes_ALLD(d, xs, ys, s, acc);
+  free(t.branch);
 }
 
 // For low-degree, i.e., 2 <= d <= D
-Tree flutes_LD(int d, DTYPE xs[], DTYPE ys[], int s[]) {
+__device__ Tree flutes_LD(int d, DTYPE xs[], DTYPE ys[], int s[],
+                          struct csoln *d_LUT[D + 1][MGROUP],
+                          int d_numsoln[D + 1][MGROUP]) {
   int k, pi, i, j;
   struct csoln *rlist, *bestrlist;
   DTYPE dd[2 * D - 2];  // 0..D-2 for v, D-1..2*D-3 for h
@@ -323,6 +347,8 @@ Tree flutes_LD(int d, DTYPE xs[], DTYPE ys[], int s[]) {
   DTYPE l[MPOWV + 1];
   int hflip;
   Tree t;
+
+  const int d_numgrp[10] = {0, 0, 0, 0, 6, 30, 180, 1260, 10080, 90720};
 
   t.deg = d;
   t.branch = (Branch *)malloc((2 * d - 2) * sizeof(Branch));
@@ -362,7 +388,7 @@ Tree flutes_LD(int d, DTYPE xs[], DTYPE ys[], int s[]) {
       k = pi + (i + 1) * k;
     }
 
-    if (k < numgrp[d]) {  // no horizontal flip
+    if (k < d_numgrp[d]) {  // no horizontal flip
       hflip = 0;
       for (i = 1; i <= d - 3; i++) {
         dd[i] = ys[i + 1] - ys[i];
@@ -370,7 +396,7 @@ Tree flutes_LD(int d, DTYPE xs[], DTYPE ys[], int s[]) {
       }
     } else {
       hflip = 1;
-      k = 2 * numgrp[d] - 1 - k;
+      k = 2 * d_numgrp[d] - 1 - k;
       for (i = 1; i <= d - 3; i++) {
         dd[i] = ys[i + 1] - ys[i];
         dd[d - 1 + i] = xs[d - 1 - i] - xs[d - 2 - i];
@@ -378,12 +404,12 @@ Tree flutes_LD(int d, DTYPE xs[], DTYPE ys[], int s[]) {
     }
 
     minl = l[0] = xs[d - 1] - xs[0] + ys[d - 1] - ys[0];
-    rlist = LUT[d][k];
+    rlist = d_LUT[d][k];
     for (i = 0; rlist->seg[i] > 0; i++) minl += dd[rlist->seg[i]];
     bestrlist = rlist;
     l[1] = minl;
     j = 2;
-    while (j <= numsoln[d][k]) {
+    while (j <= d_numsoln[d][k]) {
       rlist++;
       sum = l[rlist->parent];
       for (i = 0; rlist->seg[i] > 0; i++) sum += dd[rlist->seg[i]];
@@ -456,7 +482,9 @@ Tree flutes_LD(int d, DTYPE xs[], DTYPE ys[], int s[]) {
 }
 
 // For medium-degree, i.e., D+1 <= d <= D2
-Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc) {
+__device__ Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc,
+                          struct csoln *d_LUT[D + 1][MGROUP],
+                          int d_numsoln[D + 1][MGROUP]) {
   unsigned allocateSize = MAXD;
   if (d > MAXD) allocateSize = d + 1;
   // DTYPE *x1 = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
@@ -502,8 +530,8 @@ Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc) {
       s2[0] = 0;
       for (i = 1; i <= d - 1 - ms; i++) s2[i] = s[i + ms] - ms;
 
-      t1 = flutes_LMD(ms + 2, x1, y1, s1, acc);
-      t2 = flutes_LMD(d - ms, xs + ms, ys + ms, s2, acc);
+      t1 = flutes_LMD(ms + 2, x1, y1, s1, acc, d_LUT, d_numsoln);
+      t2 = flutes_LMD(d - ms, xs + ms, ys + ms, s2, acc, d_LUT, d_numsoln);
       t = dmergetree(t1, t2);
       free(t1.branch);
       free(t2.branch);
@@ -540,8 +568,8 @@ Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc) {
       s2[0] = ms;
       for (i = 1; i <= ms; i++) s2[i] = s[i + d - 1 - ms];
 
-      t1 = flutes_LMD(d + 1 - ms, x1, y1, s1, acc);
-      t2 = flutes_LMD(ms + 1, xs, ys + d - 1 - ms, s2, acc);
+      t1 = flutes_LMD(d + 1 - ms, x1, y1, s1, acc, d_LUT, d_numsoln);
+      t2 = flutes_LMD(ms + 1, xs, ys + d - 1 - ms, s2, acc, d_LUT, d_numsoln);
       t = dmergetree(t1, t2);
       free(t1.branch);
       free(t2.branch);
@@ -703,8 +731,8 @@ Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc) {
         }
       }
 
-      t1 = flutes_LMD(p + 1, xs, y1, s1, newacc);
-      t2 = flutes_LMD(d - p, xs + p, y2, s2, newacc);
+      t1 = flutes_LMD(p + 1, xs, y1, s1, newacc, d_LUT, d_numsoln);
+      t2 = flutes_LMD(d - p, xs + p, y2, s2, newacc, d_LUT, d_numsoln);
       ll = t1.length + t2.length;
       coord1 = t1.branch[t1.branch[nn1].n].y;
       coord2 = t2.branch[t2.branch[nn2].n].y;
@@ -732,8 +760,8 @@ Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc) {
         }
       }
 
-      t1 = flutes_LMD(p + 1, x1, ys, s1, newacc);
-      t2 = flutes_LMD(d - p, x2, ys + p, s2, newacc);
+      t1 = flutes_LMD(p + 1, x1, ys, s1, newacc, d_LUT, d_numsoln);
+      t2 = flutes_LMD(d - p, x2, ys + p, s2, newacc, d_LUT, d_numsoln);
       ll = t1.length + t2.length;
       coord1 = t1.branch[t1.branch[p].n].x;
       coord2 = t2.branch[t2.branch[0].n].x;
@@ -776,7 +804,7 @@ Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc) {
   return t;
 }
 
-Tree dmergetree(Tree t1, Tree t2) {
+__device__ Tree dmergetree(Tree t1, Tree t2) {
   int i, d, prev, curr, next, offset1, offset2;
   Tree t;
 
@@ -821,7 +849,7 @@ Tree dmergetree(Tree t1, Tree t2) {
   return t;
 }
 
-Tree hmergetree(Tree t1, Tree t2, int s[]) {
+__device__ Tree hmergetree(Tree t1, Tree t2, int s[]) {
   int i, prev, curr, next, extra, offset1, offset2;
   int p, ii, n1, n2, nn1, nn2;
   DTYPE coord1, coord2;
@@ -896,7 +924,7 @@ Tree hmergetree(Tree t1, Tree t2, int s[]) {
   return t;
 }
 
-Tree vmergetree(Tree t1, Tree t2) {
+__device__ Tree vmergetree(Tree t1, Tree t2) {
   int i, prev, curr, next, extra, offset1, offset2;
   DTYPE coord1, coord2;
   Tree t;
@@ -961,6 +989,7 @@ int main(int argc, const char **argv) {
     printf("usage: %s <input.bin> <output.bin>\n", argv[0]);
     return 255;
   }
+
   readLUT();
 
   FILE *input_fp = fopen(argv[1], "rb");
@@ -968,7 +997,9 @@ int main(int argc, const char **argv) {
   fseek(input_fp, 0, SEEK_END);
   unsigned long input_bin_size = ftell(input_fp);
   fseek(input_fp, 0, SEEK_SET);
-  int *buf_input = (int *)malloc(input_bin_size);
+  int *buf_input;
+  cudaMallocHost(&buf_input, input_bin_size, cudaHostAllocDefault);
+
   assert(fread(buf_input, 1, input_bin_size, input_fp) == input_bin_size);
   fclose(input_fp);
 
@@ -982,22 +1013,65 @@ int main(int argc, const char **argv) {
   DTYPE *result_y = (DTYPE *)calloc(tot_num_pins * 2, sizeof(DTYPE));
   int *result_n = (int *)calloc(tot_num_pins * 2, sizeof(int));
 
-#pragma omp parallel for
-  for (int net_i = 0; net_i < num_nets; ++net_i) {
-    Tree t = flute(pin_st[net_i + 1] - pin_st[net_i], data_x + pin_st[net_i],
-                   data_y + pin_st[net_i], ACCURACY);
-    // printf("%d %d\n", t.deg, t.length);
-    // for(int i = 0; i < 2 * t.deg - 2; ++i) {
-    //   printf("%d %d %d\n", t.branch[i].x, t.branch[i].y, t.branch[i].n);
-    // }
-    int offset = pin_st[net_i] * 2;
-    for (int i = 0; i < 2 * t.deg - 2; ++i) {
-      result_x[offset + i] = t.branch[i].x;
-      result_y[offset + i] = t.branch[i].y;
-      result_n[offset + i] = t.branch[i].n;
+  struct csoln **d_LUT;
+  cudaMalloc(&d_LUT, sizeof(struct csoln *) * (D + 1) * MGROUP);
+  cudaMemcpy(d_LUT, LUT, sizeof(struct csoln *) * (D + 1) * MGROUP,
+             cudaMemcpyHostToDevice);
+
+  int *d_numsoln;
+  cudaMalloc(&d_numsoln, sizeof(int) * (D + 1) * MGROUP);
+  cudaMemcpy(d_numsoln, numsoln, sizeof(int) * (D + 1) * MGROUP,
+             cudaMemcpyHostToDevice);
+
+  int *d_pin_st;
+  cudaMalloc(&d_pin_st, sizeof(int) * (num_nets + 1));
+  cudaMemcpy(d_pin_st, pin_st, sizeof(int) * (num_nets + 1),
+             cudaMemcpyHostToDevice);
+
+  DTYPE *d_data_x;
+  cudaMalloc(&d_data_x, sizeof(DTYPE) * tot_num_pins);
+  cudaMemcpy(d_data_x, data_x, sizeof(DTYPE) * tot_num_pins,
+             cudaMemcpyHostToDevice);
+
+  DTYPE *d_data_y;
+  cudaMalloc(&d_data_y, sizeof(DTYPE) * tot_num_pins);
+  cudaMemcpy(d_data_y, data_y, sizeof(DTYPE) * tot_num_pins,
+             cudaMemcpyHostToDevice);
+
+  DTYPE *d_result_x;
+  cudaMalloc(&d_result_x, sizeof(DTYPE) * tot_num_pins * 2);
+
+  DTYPE *d_result_y;
+  cudaMalloc(&d_result_y, sizeof(DTYPE) * tot_num_pins * 2);
+
+  int *d_result_n;
+  cudaMalloc(&d_result_n, sizeof(int) * tot_num_pins * 2);
+
+  {
+    int block_dim = 256;
+    int grid_dim = (num_nets + block_dim - 1) / block_dim;
+
+    flute<<<grid_dim, block_dim>>>(num_nets, d_pin_st, d_data_x, d_data_y,
+                                   ACCURACY, d_result_x, d_result_y, d_result_n,
+                                   (csoln * (*)[90720]) d_LUT,
+                                   (int(*)[90720])d_numsoln);
+
+    // check error
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+      fprintf(stderr, "ERROR: %s\n", cudaGetErrorString(error));
+      return 1;
     }
-    free(t.branch);
   }
+
+  cudaMemcpy(result_x, d_result_x, sizeof(DTYPE) * tot_num_pins * 2,
+             cudaMemcpyDeviceToHost);
+
+  cudaMemcpy(result_y, d_result_y, sizeof(DTYPE) * tot_num_pins * 2,
+             cudaMemcpyDeviceToHost);
+
+  cudaMemcpy(result_n, d_result_n, sizeof(int) * tot_num_pins * 2,
+             cudaMemcpyDeviceToHost);
 
   FILE *output_fp = fopen(argv[2], "wb");
   assert(output_fp);
@@ -1006,9 +1080,21 @@ int main(int argc, const char **argv) {
   fwrite(result_n, sizeof(int), tot_num_pins, output_fp);
   fclose(output_fp);
 
+  cudaFree(d_LUT);
+  cudaFree(d_numsoln);
+
+  cudaFree(d_pin_st);
+  cudaFree(d_data_x);
+  cudaFree(d_data_y);
+  cudaFree(d_result_x);
+  cudaFree(d_result_y);
+  cudaFree(d_result_n);
+
   free(result_x);
   free(result_y);
   free(result_n);
-  free(buf_input);
+
+  cudaFreeHost(buf_input);
+
   return 0;
 }
