@@ -238,22 +238,10 @@ Tree flute(int d, DTYPE x[], DTYPE y[], int acc) {
   }
 
   // sort x
-  for (i = 0; i < d - 1; i++) {
-    minval = ptp[i]->x;
-    minidx = i;
-    for (j = i + 1; j < d; j++) {
-      if (minval > ptp[j]->x ||
-          (minval == ptp[j]->x &&
-           (ptp[minidx]->y > ptp[j]->y ||
-            (ptp[minidx]->y == ptp[j]->y && ptp[minidx] > ptp[j])))) {
-        minval = ptp[j]->x;
-        minidx = j;
-      }
-    }
-    tmpp = ptp[i];
-    ptp[i] = ptp[minidx];
-    ptp[minidx] = tmpp;
-  }
+  std::sort(ptp, ptp + d, [](POINTptr a, POINTptr b) {
+    return !(a->x > b->x ||
+             (a->x == b->x && (a->y > b->y || (a->y == b->y && a > b))));
+  });
 
 #if REMOVE_DUPLICATE_PIN == 1
   ptp[d] = &pt[d];
@@ -274,24 +262,14 @@ Tree flute(int d, DTYPE x[], DTYPE y[], int acc) {
   }
 
   // sort y to find s[]
-  for (i = 0; i < d - 1; i++) {
-    minval = ptp[i]->y;
-    minidx = i;
-    for (j = i + 1; j < d; j++) {
-      if (minval > ptp[j]->y ||
-          (minval == ptp[j]->y &&
-           (ptp[minidx]->x > ptp[j]->x ||
-            (ptp[minidx]->x == ptp[j]->x && ptp[minidx] > ptp[j])))) {
-        minval = ptp[j]->y;
-        minidx = j;
-      }
-    }
-    ys[i] = ptp[minidx]->y;
-    s[i] = ptp[minidx]->o;
-    ptp[minidx] = ptp[i];
+  std::sort(ptp, ptp + d, [](POINTptr a, POINTptr b) {
+    return !(a->y > b->y ||
+             (a->y == b->y && (a->x > b->x || (a->x == b->x && a > b))));
+  });
+  for (int i = 0; i < d; i++) {
+    ys[i] = ptp[i]->y;
+    s[i] = ptp[i]->o;
   }
-  ys[d - 1] = ptp[d - 1]->y;
-  s[d - 1] = ptp[d - 1]->o;
 
   t = flutes(d, xs, ys, s, acc);
 

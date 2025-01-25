@@ -10,7 +10,7 @@ int main(int argc, const char **argv) {
     return 255;
   }
   srand(atoi(argv[1]));
-  int num_nets = 10000;
+  int num_nets = 1000000;
   std::vector<int> net_begin(1, 0);
   std::vector<int> xs, ys;
   for (int T = 0; T < num_nets; ++T) {
