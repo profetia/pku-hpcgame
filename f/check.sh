@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# app="./main"
-app="sage -python baseline.py"
+app="./main"
+# app="sage -python baseline.py"
 input="./data/$1.in.data"
 answer="./data/$1.out.data"
 
