@@ -1004,7 +1004,7 @@ int main(int argc, const char **argv) {
   DTYPE *result_y = (DTYPE *)calloc(tot_num_pins * 2, sizeof(DTYPE));
   int *result_n = (int *)calloc(tot_num_pins * 2, sizeof(int));
 
-#pragma omp parallel
+#pragma omp parallel for
   for (int net_i = 0; net_i < num_nets; ++net_i) {
     Tree t = flute(pin_st[net_i + 1] - pin_st[net_i], data_x + pin_st[net_i],
                    data_y + pin_st[net_i], ACCURACY);

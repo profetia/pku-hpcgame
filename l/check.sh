@@ -6,7 +6,7 @@ output="./data/$1.out.bin"
 
 rm -rf output.bin
 
-$app $input output.bin
+time $app $input output.bin
 
 cmp $output output.bin
 

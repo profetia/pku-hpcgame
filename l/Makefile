@@ -1,5 +1,5 @@
-CXX := clang++
-CXXFLAGS := -O3 -march=native -fopenmp
+CXX := icpx
+CXXFLAGS := -O3 -xHost -qopenmp
 
 all: baseline flute datagen
 
