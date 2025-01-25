@@ -215,11 +215,16 @@ Tree flute(int d, DTYPE x[], DTYPE y[], int acc) {
     allocateSize = d + 1;
     //    printf("setting allocateSize = %d\n", allocateSize);
   }
-  DTYPE *xs = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
-  DTYPE *ys = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
-  int *s = (int *)malloc(sizeof(int) * allocateSize);
-  POINT *pt = (POINT *)malloc(sizeof(POINT) * allocateSize);
-  POINTptr *ptp = (POINTptr *)malloc(sizeof(POINTptr) * allocateSize);
+  // DTYPE *xs = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
+  // DTYPE *ys = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
+  // int *s = (int *)malloc(sizeof(int) * allocateSize);
+  // POINT *pt = (POINT *)malloc(sizeof(POINT) * allocateSize);
+  // POINTptr *ptp = (POINTptr *)malloc(sizeof(POINTptr) * allocateSize);
+
+  DTYPE xs[MAXD], ys[MAXD];
+  int s[MAXD];
+  POINT pt[MAXD];
+  POINTptr ptp[MAXD];
 
   POINT *tmpp;
   DTYPE minval;
@@ -290,11 +295,11 @@ Tree flute(int d, DTYPE x[], DTYPE y[], int acc) {
 
   t = flutes(d, xs, ys, s, acc);
 
-  free(xs);
-  free(ys);
-  free(s);
-  free(pt);
-  free(ptp);
+  // free(xs);
+  // free(ys);
+  // free(s);
+  // free(pt);
+  // free(ptp);
 
   return t;
 }
@@ -476,22 +481,22 @@ Tree flutes_LD(int d, DTYPE xs[], DTYPE ys[], int s[]) {
 Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc) {
   unsigned allocateSize = MAXD;
   if (d > MAXD) allocateSize = d + 1;
-  DTYPE *x1 = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
-  DTYPE *x2 = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
-  DTYPE *y1 = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
-  DTYPE *y2 = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
-  int *si = (int *)malloc(sizeof(int) * allocateSize);
-  int *s1 = (int *)malloc(sizeof(int) * allocateSize);
-  int *s2 = (int *)malloc(sizeof(int) * allocateSize);
-  float *score = (float *)malloc(sizeof(float) * 2 * allocateSize);
-  float *penalty = (float *)malloc(sizeof(float) * allocateSize);
-  DTYPE *distx = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
-  DTYPE *disty = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
+  // DTYPE *x1 = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
+  // DTYPE *x2 = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
+  // DTYPE *y1 = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
+  // DTYPE *y2 = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
+  // int *si = (int *)malloc(sizeof(int) * allocateSize);
+  // int *s1 = (int *)malloc(sizeof(int) * allocateSize);
+  // int *s2 = (int *)malloc(sizeof(int) * allocateSize);
+  // float *score = (float *)malloc(sizeof(float) * 2 * allocateSize);
+  // float *penalty = (float *)malloc(sizeof(float) * allocateSize);
+  // DTYPE *distx = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
+  // DTYPE *disty = (DTYPE *)malloc(sizeof(DTYPE) * allocateSize);
 
-  //  DTYPE x1[MAXD], x2[MAXD], y1[MAXD], y2[MAXD];
-  //  int si[MAXD], s1[MAXD], s2[MAXD];
-  //  float score[2*MAXD], penalty[MAXD];
-  //  DTYPE distx[MAXD], disty[MAXD];
+  DTYPE x1[MAXD], x2[MAXD], y1[MAXD], y2[MAXD];
+  int si[MAXD], s1[MAXD], s2[MAXD];
+  float score[2 * MAXD], penalty[MAXD];
+  DTYPE distx[MAXD], disty[MAXD];
   float pnlty, dx, dy;
   DTYPE ll, minl, coord1, coord2;
   int i, r, p, maxbp, bestbp, bp, nbp, ub, lb, n1, n2, nn1, nn2, ms, newacc;
@@ -525,17 +530,17 @@ Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc) {
       free(t1.branch);
       free(t2.branch);
 
-      free(x1);
-      free(x2);
-      free(y1);
-      free(y2);
-      free(si);
-      free(s1);
-      free(s2);
-      free(score);
-      free(penalty);
-      free(distx);
-      free(disty);
+      // free(x1);
+      // free(x2);
+      // free(y1);
+      // free(y2);
+      // free(si);
+      // free(s1);
+      // free(s2);
+      // free(score);
+      // free(penalty);
+      // free(distx);
+      // free(disty);
       return t;
     }
   } else {  // (s[0] > s[d-1])
@@ -563,17 +568,17 @@ Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc) {
       free(t1.branch);
       free(t2.branch);
 
-      free(x1);
-      free(x2);
-      free(y1);
-      free(y2);
-      free(si);
-      free(s1);
-      free(s2);
-      free(score);
-      free(penalty);
-      free(distx);
-      free(disty);
+      // free(x1);
+      // free(x2);
+      // free(y1);
+      // free(y2);
+      // free(si);
+      // free(s1);
+      // free(s2);
+      // free(score);
+      // free(penalty);
+      // free(distx);
+      // free(disty);
       return t;
     }
   }
@@ -779,17 +784,17 @@ Tree flutes_MD(int d, DTYPE xs[], DTYPE ys[], int s[], int acc) {
   free(bestt1.branch);
   free(bestt2.branch);
 
-  free(x1);
-  free(x2);
-  free(y1);
-  free(y2);
-  free(si);
-  free(s1);
-  free(s2);
-  free(score);
-  free(penalty);
-  free(distx);
-  free(disty);
+  // free(x1);
+  // free(x2);
+  // free(y1);
+  // free(y2);
+  // free(si);
+  // free(s1);
+  // free(s2);
+  // free(score);
+  // free(penalty);
+  // free(distx);
+  // free(disty);
   return t;
 }
 
@@ -999,6 +1004,7 @@ int main(int argc, const char **argv) {
   DTYPE *result_y = (DTYPE *)calloc(tot_num_pins * 2, sizeof(DTYPE));
   int *result_n = (int *)calloc(tot_num_pins * 2, sizeof(int));
 
+#pragma omp parallel
   for (int net_i = 0; net_i < num_nets; ++net_i) {
     Tree t = flute(pin_st[net_i + 1] - pin_st[net_i], data_x + pin_st[net_i],
                    data_y + pin_st[net_i], ACCURACY);
