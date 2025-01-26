@@ -19,7 +19,7 @@ std::string toHex(const uint8_t* data, size_t size) {
 }
 
 constexpr int NUM_THREADS = 8;
-constexpr int NUM_PREFIXES = 10;
+constexpr int NUM_PREFIXES = 3;
 constexpr int PREFIX_LENGTH = 3;
 constexpr int PREFIX_OFFSET = 12;
 
