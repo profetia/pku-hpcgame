@@ -72,6 +72,25 @@ def painter_job_submit(keys: dict[str, str]) -> str:
     return json.loads(output)["token"]
 
 
+def painter_pixel_get(x: int, y: int) -> str:
+    cmd = [
+        PAINTER,
+        "pixel",
+        "get",
+        "--x",
+        str(x),
+        "--y",
+        str(y),
+    ]
+    output = subprocess_run(cmd)
+
+    output = json.loads(output)
+    r = "{:02x}".format(output["r"])
+    g = "{:02x}".format(output["g"])
+    b = "{:02x}".format(output["b"])
+    return f"{r}{g}{b}"
+
+
 def painter_pixel_set(x: int, y: int, token: str) -> None:
     cmd = [
         PAINTER,
@@ -109,7 +128,17 @@ def main(args: argparse.Namespace) -> None:
 
     for color, points in work.items():
         color = "{:02x}".format(int(color))
-        for idx, task in enumerate(chunk(iter(points), LIFETIME)):
+        
+        filtered = []
+        for x, y in points:
+            current = painter_pixel_get(x + x_offset, y + y_offset)
+            if current == f"{color}{color}{color}":
+                continue
+            filtered.append((x, y))
+
+        print(f"Filtered {len(points) - len(filtered)} pixels for {color}")
+
+        for idx, task in enumerate(chunk(iter(filtered), LIFETIME)):
             job = painter_job_get()
             print(f"Fetched {job['jobid']} for {color}:{idx}")
 
