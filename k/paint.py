@@ -10,12 +10,20 @@ PAINTER = "painter"
 
 
 def subprocess_run(cmd: list[str]) -> str:
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    
+    while True:
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            break
+        except subprocess.CalledProcessError as e:
+            print(f"Error: {e}")
+            print(f"Retry: {cmd}")
+            continue
 
     return result.stdout
 
@@ -101,7 +109,7 @@ def main(args: argparse.Namespace) -> None:
 
     for color, points in work.items():
         color = "{:02x}".format(int(color))
-        for idx, task in enumerate(chunk(points, LIFETIME)):
+        for idx, task in enumerate(chunk(iter(points), LIFETIME)):
             job = painter_job_get()
             print(f"Fetched {job['jobid']} for {color}:{idx}")
 
